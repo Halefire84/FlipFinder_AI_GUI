@@ -1,0 +1,334 @@
+Nice—let’s give FlipFinder a real face.
+
+Here’s a **GUI-ready advanced FlipFinder** using **Tkinter**, which runs fine in Pydroid 3 and on desktop Python.
+
+---
+
+### Project structure (GUI version)
+
+```text
+FlipFinder_AI_GUI/
+│
+├── main.py              # GUI entry point
+├── flipfinder_core.py
+├── marketplace_scraper.py
+├── ai_value_estimator.py
+├── risk_model.py
+├── utils.py
+│
+└── data/
+    ├── categories.json
+    ├── conditions.json
+    └── price_reference.json
+```
+
+---
+
+### main.py (Tkinter GUI)
+
+```python
+import json
+import tkinter as tk
+from tkinter import ttk, messagebox
+
+from flipfinder_core import analyze_item
+from marketplace_scraper import fetch_market_data
+from ai_value_estimator import estimate_value
+from risk_model import compute_risk_score
+from utils import clean_text
+
+
+class FlipFinderGUI(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("FlipFinder AI — GUI")
+        self.geometry("520x520")
+        self._build_ui()
+
+    def _build_ui(self):
+        pad = 8
+
+        # Item name
+        tk.Label(self, text="Item name").grid(row=0, column=0, sticky="w", padx=pad, pady=pad)
+        self.entry_name = tk.Entry(self, width=40)
+        self.entry_name.grid(row=0, column=1, padx=pad, pady=pad)
+
+        # Description
+        tk.Label(self, text="Description").grid(row=1, column=0, sticky="w", padx=pad, pady=pad)
+        self.entry_desc = tk.Entry(self, width=40)
+        self.entry_desc.grid(row=1, column=1, padx=pad, pady=pad)
+
+        # Category
+        tk.Label(self, text="Category").grid(row=2, column=0, sticky="w", padx=pad, pady=pad)
+        self.combo_category = ttk.Combobox(
+            self,
+            values=["electronics", "tools", "collectibles", "appliances", "misc"],
+            state="readonly",
+            width=37
+        )
+        self.combo_category.current(0)
+        self.combo_category.grid(row=2, column=1, padx=pad, pady=pad)
+
+        # Condition
+        tk.Label(self, text="Condition").grid(row=3, column=0, sticky="w", padx=pad, pady=pad)
+        self.combo_condition = ttk.Combobox(
+            self,
+            values=["new", "like new", "used", "fair", "broken"],
+            state="readonly",
+            width=37
+        )
+        self.combo_condition.current(2)
+        self.combo_condition.grid(row=3, column=1, padx=pad, pady=pad)
+
+        # Buy price
+        tk.Label(self, text="Buy price (USD)").grid(row=4, column=0, sticky="w", padx=pad, pady=pad)
+        self.entry_buy_price = tk.Entry(self, width=20)
+        self.entry_buy_price.grid(row=4, column=1, sticky="w", padx=pad, pady=pad)
+
+        # Analyze button
+        self.btn_analyze = tk.Button(self, text="Analyze Flip", command=self.run_analysis)
+        self.btn_analyze.grid(row=5, column=0, columnspan=2, pady=pad)
+
+        # Output area
+        tk.Label(self, text="Analysis result").grid(row=6, column=0, sticky="nw", padx=pad, pady=pad)
+        self.text_output = tk.Text(self, width=60, height=15)
+        self.text_output.grid(row=6, column=1, padx=pad, pady=pad)
+
+    def run_analysis(self):
+        try:
+            item_name = clean_text(self.entry_name.get())
+            item_desc = clean_text(self.entry_desc.get())
+            category = clean_text(self.combo_category.get())
+            condition = clean_text(self.combo_condition.get())
+            buy_price = float(self.entry_buy_price.get())
+        except ValueError:
+            messagebox.showerror("Input error", "Buy price must be a number.")
+            return
+
+        if not item_name:
+            messagebox.showerror("Input error", "Item name is required.")
+            return
+
+        market_data = fetch_market_data(item_name, category)
+        ai_estimate = estimate_value(
+            item_name,
+            item_desc,
+            category,
+            condition,
+            market_data
+        )
+        risk_score = compute_risk_score(
+            buy_price=buy_price,
+            ai_estimate=ai_estimate,
+            market_data=market_data,
+            condition=condition
+        )
+        analysis = analyze_item(
+            item_name=item_name,
+            item_desc=item_desc,
+            category=category,
+            condition=condition,
+            buy_price=buy_price,
+            market_data=market_data,
+            ai_estimate=ai_estimate,
+            risk_score=risk_score
+        )
+
+        self.text_output.delete("1.0", tk.END)
+        self.text_output.insert(tk.END, json.dumps(analysis, indent=4))
+
+
+if __name__ == "__main__":
+    app = FlipFinderGUI()
+    app.mainloop()
+```
+
+---
+
+### flipfinder_core.py
+
+```python
+def analyze_item(
+    item_name,
+    item_desc,
+    category,
+    condition,
+    buy_price,
+    market_data,
+    ai_estimate,
+    risk_score
+):
+    expected_sell_price = ai_estimate
+    gross_profit = expected_sell_price - buy_price
+    roi = (gross_profit / buy_price) * 100 if buy_price > 0 else 0
+
+    if roi > 25 and risk_score < 0.5:
+        recommendation = "Strong Buy"
+    elif roi > 10 and risk_score < 0.7:
+        recommendation = "Buy"
+    elif roi > 5 and risk_score < 0.85:
+        recommendation = "Speculative"
+    else:
+        recommendation = "Pass"
+
+    return {
+        "item_name": item_name,
+        "description": item_desc,
+        "category": category,
+        "condition": condition,
+        "buy_price": round(buy_price, 2),
+        "market_data": market_data,
+        "ai_estimated_sell_price": round(expected_sell_price, 2),
+        "gross_profit": round(gross_profit, 2),
+        "roi_percent": round(roi, 2),
+        "risk_score": round(risk_score, 2),
+        "recommendation": recommendation
+    }
+```
+
+---
+
+### marketplace_scraper.py
+
+```python
+import random
+
+def fetch_market_data(item_name, category):
+    base_avg = {
+        "electronics": 60,
+        "tools": 35,
+        "collectibles": 80,
+        "appliances": 50,
+        "misc": 30
+    }.get(category, 30)
+
+    volatility = random.uniform(0.1, 0.35)
+    demand_score = random.uniform(0.4, 0.95)
+
+    recent_sales = [
+        round(base_avg * random.uniform(0.8, 1.2), 2)
+        for _ in range(6)
+    ]
+
+    return {
+        "avg_price": round(base_avg, 2),
+        "recent_sales": recent_sales,
+        "volatility": round(volatility, 2),
+        "demand_score": round(demand_score, 2)
+    }
+```
+
+---
+
+### ai_value_estimator.py
+
+```python
+import json
+from pathlib import Path
+
+DATA_DIR = Path("data")
+
+def load_price_reference():
+    ref_path = DATA_DIR / "price_reference.json"
+    if ref_path.exists():
+        with open(ref_path, "r") as f:
+            return json.load(f)
+    return {
+        "electronics": 1.1,
+        "tools": 0.9,
+        "collectibles": 1.3,
+        "appliances": 0.8,
+        "misc": 1.0
+    }
+
+def condition_multiplier(condition):
+    mapping = {
+        "new": 1.2,
+        "like new": 1.1,
+        "used": 1.0,
+        "fair": 0.8,
+        "broken": 0.4
+    }
+    return mapping.get(condition, 1.0)
+
+def estimate_value(item_name, item_desc, category, condition, market_data):
+    price_ref = load_price_reference()
+    category_factor = price_ref.get(category, 1.0)
+    cond_factor = condition_multiplier(condition)
+
+    base = market_data["avg_price"]
+    demand = market_data["demand_score"]
+    volatility = market_data["volatility"]
+
+    value = base
+    value *= (1 + demand * 0.3)
+    value *= category_factor
+    value *= cond_factor
+    value *= (1 - volatility * 0.15)
+
+    return round(value, 2)
+```
+
+---
+
+### risk_model.py
+
+```python
+def compute_risk_score(buy_price, ai_estimate, market_data, condition):
+    volatility = market_data.get("volatility", 0.2)
+    demand = market_data.get("demand_score", 0.6)
+
+    if ai_estimate <= 0:
+        margin_risk = 1.0
+    else:
+        margin = (ai_estimate - buy_price) / ai_estimate
+        margin_risk = max(0.0, 1.0 - margin)
+
+    cond_risk_map = {
+        "new": 0.1,
+        "like new": 0.2,
+        "used": 0.4,
+        "fair": 0.6,
+        "broken": 0.85
+    }
+    condition_risk = cond_risk_map.get(condition, 0.5)
+
+    risk = (
+        0.4 * margin_risk +
+        0.3 * volatility +
+        0.2 * condition_risk +
+        0.1 * (1 - demand)
+    )
+
+    return max(0.0, min(1.0, risk))
+```
+
+---
+
+### utils.py
+
+```python
+def clean_text(text):
+    return text.strip().lower()
+```
+
+---
+
+### data/price_reference.json
+
+```json
+{
+  "electronics": 1.15,
+  "tools": 0.95,
+  "collectibles": 1.35,
+  "appliances": 0.85,
+  "misc": 1.0
+}
+```
+
+---
+
+If you want, I can now:
+
+- write a **short “How to run on Android (GUI)”** section, or  
+- tweak the UI to show **color-coded recommendations** (green = Strong Buy, red = Pass).
